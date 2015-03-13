@@ -39,19 +39,19 @@ namespace Tp
 {
 
 struct TP_QT_NO_EXPORT BaseConnection::Private {
-    Private(BaseConnection *parent, const QDBusConnection &dbusConnection,
+    Private(BaseConnection *connection, const QDBusConnection &dbusConnection,
             const QString &cmName, const QString &protocolName,
             const QVariantMap &parameters)
-        : parent(parent),
+        : connection(connection),
           cmName(cmName),
           protocolName(protocolName),
           parameters(parameters),
           status(Tp::ConnectionStatusDisconnected),
           selfHandle(0),
-          adaptee(new BaseConnection::Adaptee(dbusConnection, parent)) {
+          adaptee(new BaseConnection::Adaptee(dbusConnection, connection)) {
     }
 
-    BaseConnection *parent;
+    BaseConnection *connection;
     QString cmName;
     QString protocolName;
     QVariantMap parameters;
