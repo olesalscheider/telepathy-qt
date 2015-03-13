@@ -51,6 +51,8 @@ struct TP_QT_NO_EXPORT BaseConnection::Private {
           adaptee(new BaseConnection::Adaptee(dbusConnection, connection)) {
     }
 
+    bool getChannelPropertiesFromRequest(const QVariantMap &request, QString *channelType, uint *targetHandleType, uint *targetHandle, uint *initiatorHandle, DBusError *error);
+
     BaseConnection *connection;
     QString cmName;
     QString protocolName;
@@ -173,6 +175,66 @@ void BaseConnection::Adaptee::requestHandles(uint handleType, const QStringList 
         return;
     }
     context->setFinished(handles);
+}
+
+bool BaseConnection::Private::getChannelPropertiesFromRequest(const QVariantMap &request, QString *channelType, uint *targetHandleType, uint *targetHandle, uint *initiatorHandle, DBusError *error)
+{
+    if (channelType) {
+        *channelType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType")].toString();
+    }
+
+    if (targetHandleType) {
+        if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType"))) {
+            *targetHandleType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType")].toUInt();
+        } else {
+            foreach (const QString key, request.keys()) {
+                if (key.startsWith(TP_QT_IFACE_CHANNEL_INTERFACE_CONFERENCE)) {
+                    *targetHandleType = HandleTypeRoom;
+                    break;
+                }
+            }
+        }
+
+        if (targetHandle) {
+            if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle"))) {
+                *targetHandle = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle")].toUInt();
+            } else if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetID"))) {
+                const QString targetID = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetID")].toString();
+                const Tp::UIntList list = connection->requestHandles(*targetHandleType, QStringList() << targetID, error);
+                if (error->isValid()) {
+                    warning() << "BaseConnection::Private::getChannelPropertiesFromRequest: could not resolve target ID " << targetID;
+                    return false;
+                } else if (list.isEmpty()) {
+                    error->set(TP_QT_ERROR_NOT_IMPLEMENTED, QLatin1String("Internal error. (BaseConnection::requestHandles() callback)"));
+                    return false;
+                    warning() << "BaseConnection::Private::getChannelPropertiesFromRequest: BaseConnection::requestHandles() callback error. Could not resolve target ID " << targetID;
+                }
+
+                *targetHandle = list.first();
+            }
+        }
+
+        if (initiatorHandle) {
+            if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle"))) {
+                *initiatorHandle = request[TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle")].toUInt();
+            } else if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".InitiatorID"))) {
+                const QString initiatorID = request[TP_QT_IFACE_CHANNEL + QLatin1String(".InitiatorID")].toString();
+                const Tp::UIntList list = connection->requestHandles(*targetHandleType, QStringList() << initiatorID, error);
+                if (error->isValid()) {
+                    warning() << "BaseConnection::Private::getChannelPropertiesFromRequest: could not resolve initiator ID " << initiatorID;
+                    return false;
+                } else if (list.isEmpty()) {
+                    error->set(TP_QT_ERROR_NOT_IMPLEMENTED, QLatin1String("Internal error. (BaseConnection::requestHandles() callback)"));
+                    warning() << "BaseConnection::Private::getChannelPropertiesFromRequest: BaseConnection::requestHandles callback error. Could not resolve initiator ID " << initiatorID;
+                    return false;
+                }
+
+                *initiatorHandle = list.first();
+            }
+        }
+    }
+
+    return true;
 }
 
 /**
@@ -365,6 +427,29 @@ Tp::BaseChannelPtr BaseConnection::createChannel(const QString &channelType,
     return channel;
 }
 
+BaseChannelPtr BaseConnection::createChannel(bool suppressHandler, const QVariantMap &request, DBusError *error)
+{
+    QString channelType;
+    uint targetHandleType;
+    uint targetHandle;
+    uint initiatorHandle;
+
+    if (!mPriv->getChannelPropertiesFromRequest(request, &channelType, &targetHandleType, &targetHandle, &initiatorHandle, error) || error->isValid()) {
+        error->set(TP_QT_ERROR_INVALID_ARGUMENT, QLatin1String("Missing parameters"));
+        warning() << "BaseConnection::createChannel: Can not get needed properties from request";
+        return BaseChannelPtr();
+    }
+
+    foreach(BaseChannelPtr channel, mPriv->channels) {
+        if (channel->channelType() == channelType
+                && channel->targetHandleType() == targetHandleType
+                && channel->targetHandle() == targetHandle) {
+            return channel;
+        }
+    }
+    return createChannel(channelType, targetHandleType, targetHandle, initiatorHandle, suppressHandler, request, error);
+}
+
 void BaseConnection::setRequestHandlesCallback(const RequestHandlesCallback &cb)
 {
     mPriv->requestHandlesCB = cb;
@@ -419,6 +504,22 @@ BaseChannelPtr BaseConnection::ensureChannel(const QString &channelType, uint ta
     }
     yours = true;
     return createChannel(channelType, targetHandleType, targetHandle, initiatorHandle, suppressHandler, request, error);
+}
+
+BaseChannelPtr BaseConnection::ensureChannel(bool &yours, bool suppressHandler, const QVariantMap &request, DBusError *error)
+{
+    QString channelType;
+    uint targetHandleType;
+    uint targetHandle;
+    uint initiatorHandle;
+
+    if (!mPriv->getChannelPropertiesFromRequest(request, &channelType, &targetHandleType, &targetHandle, &initiatorHandle, error) || error->isValid()) {
+        error->set(TP_QT_ERROR_INVALID_ARGUMENT, QLatin1String("Missing parameters"));
+        warning() << "BaseConnection::createChannel: Can not get needed properties from request";
+        return BaseChannelPtr();
+    }
+
+    return ensureChannel(channelType, targetHandleType, targetHandle, yours, initiatorHandle, suppressHandler, request, error);
 }
 
 void BaseConnection::addChannel(BaseChannelPtr channel)
@@ -760,36 +861,18 @@ void BaseConnectionRequestsInterface::channelClosed(const QDBusObjectPath &remov
 void BaseConnectionRequestsInterface::ensureChannel(const QVariantMap &request, bool &yours,
         QDBusObjectPath &objectPath, QVariantMap &details, DBusError *error)
 {
-    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType"))
-            || !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType"))
-            || (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle"))
-                && !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetID")))) {
+    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType"))) {
         error->set(TP_QT_ERROR_INVALID_ARGUMENT, QLatin1String("Missing parameters"));
         return;
     }
 
-    QString channelType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType")].toString();
-    uint targetHandleType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType")].toUInt();
-    uint targetHandle;
-    if (request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle")))
-        targetHandle = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle")].toUInt();
-    else {
-        QString targetID = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetID")].toString();
-        Tp::UIntList list = mPriv->connection->requestHandles(targetHandleType, QStringList() << targetID, error);
-        if (error->isValid()) {
-            warning() << "BBaseConnectionRequestsInterface::ensureChannel: could not resolve ID " << targetID;
-            return;
-        }
-        targetHandle = *list.begin();
+    QVariantMap requestWithInitiator = request;
+    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle")) && !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorID"))) {
+        requestWithInitiator[TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle")] = QVariant::fromValue(mPriv->connection->selfHandle());
     }
 
-    bool suppressHandler = true;
-    BaseChannelPtr channel = mPriv->connection->ensureChannel(channelType, targetHandleType,
-                             targetHandle, yours,
-                             mPriv->connection->selfHandle(),
-                             suppressHandler,
-                             request,
-                             error);
+    BaseChannelPtr channel = mPriv->connection->ensureChannel(yours, /* suppressHandler */ true, requestWithInitiator, error);
+
     if (error->isValid())
         return;
 
@@ -801,31 +884,24 @@ void BaseConnectionRequestsInterface::createChannel(const QVariantMap &request,
         QDBusObjectPath &objectPath,
         QVariantMap &details, DBusError *error)
 {
-    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType"))
-            || !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType"))
-            || !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle"))) {
+    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType"))) {
         error->set(TP_QT_ERROR_INVALID_ARGUMENT, QLatin1String("Missing parameters"));
         return;
     }
 
-    QString channelType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".ChannelType")].toString();
-    uint targetHandleType = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandleType")].toUInt();
-    uint targetHandle = request[TP_QT_IFACE_CHANNEL + QLatin1String(".TargetHandle")].toUInt();
+    QVariantMap requestWithInitiator = request;
+    if (!request.contains(TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle")) && !request.contains(TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorID"))) {
+        requestWithInitiator[TP_QT_IFACE_CHANNEL + QLatin1String("InitiatorHandle")] = QVariant::fromValue(mPriv->connection->selfHandle());
+    }
 
-    bool suppressHandler = true;
-    BaseChannelPtr channel = mPriv->connection->createChannel(channelType, targetHandleType,
-                             targetHandle,
-                             mPriv->connection->selfHandle(),
-                             suppressHandler,
-                             request,
-                             error);
+    BaseChannelPtr channel = mPriv->connection->createChannel(/* suppressHandler */ true, requestWithInitiator, error);
+
     if (error->isValid())
         return;
 
     objectPath = QDBusObjectPath(channel->objectPath());
     details = channel->details().properties;
 }
-
 
 // Conn.I.Contacts
 BaseConnectionContactsInterface::Adaptee::Adaptee(BaseConnectionContactsInterface *interface)
