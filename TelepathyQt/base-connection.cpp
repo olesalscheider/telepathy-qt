@@ -966,6 +966,22 @@ void BaseConnectionContactsInterface::Adaptee::getContactAttributes(const Tp::UI
     context->setFinished(attributes);
 }
 
+void BaseConnectionContactsInterface::Adaptee::getContactByID(const QString &identifier, const QStringList &interfaces,
+        const Tp::Service::ConnectionInterfaceContactsAdaptor::GetContactByIDContextPtr &context)
+{
+    debug() << "BaseConnectionContactsInterface::Adaptee::getContactByID";
+    DBusError error;
+    uint handle;
+    QVariantMap attributes;
+
+    mInterface->getContactByID(identifier, interfaces, handle, attributes, &error);
+    if (error.isValid()) {
+        context->setFinishedWithError(error.name(), error.message());
+        return;
+    }
+    context->setFinished(handle, attributes);
+}
+
 /**
  * \class BaseConnectionContactsInterface
  * \ingroup servicecm
@@ -1035,6 +1051,24 @@ Tp::ContactAttributesMap BaseConnectionContactsInterface::getContactAttributes(c
         return Tp::ContactAttributesMap();
     }
     return mPriv->getContactAttributesCB(handles, interfaces, error);
+}
+
+void BaseConnectionContactsInterface::getContactByID(const QString &identifier, const QStringList &interfaces, uint &handle, QVariantMap &attributes, DBusError *error)
+{
+    const Tp::UIntList handles = mPriv->connection->requestHandles(Tp::HandleTypeContact, QStringList() << identifier, error);
+    if (error->isValid() || handles.isEmpty()) {
+        // The check for empty handles is paranoid, because the error must be set in such case.
+        return;
+    }
+
+    const Tp::ContactAttributesMap result = getContactAttributes(handles, interfaces, error);
+
+    if (error->isValid()) {
+        return;
+    }
+
+    handle = handles.first();
+    attributes = result.value(handle);
 }
 
 // Conn.I.SimplePresence
