@@ -228,8 +228,7 @@ public:
                                                  uint contentHashType,
                                                  const QString &contentHash,
                                                  const QString &description,
-                                                 const QDateTime &date,
-                                                 const Tp::SupportedSocketMap &availableSocketTypes)
+                                                 const QDateTime &date)
     {
         return BaseChannelFileTransferTypePtr(new BaseChannelFileTransferType(contentType,
                                                                               filename,
@@ -237,8 +236,7 @@ public:
                                                                               contentHashType,
                                                                               contentHash,
                                                                               description,
-                                                                              date,
-                                                                              availableSocketTypes));
+                                                                              date));
     }
     template<typename BaseChannelFileTransferTypeSubclass>
     static SharedPtr<BaseChannelFileTransferTypeSubclass> create(const QString &contentType,
@@ -247,8 +245,7 @@ public:
                                                                  uint contentHashType,
                                                                  const QString &contentHash,
                                                                  const QString &description,
-                                                                 const QDateTime &date,
-                                                                 const Tp::SupportedSocketMap &availableSocketTypes)
+                                                                 const QDateTime &date)
     {
         return SharedPtr<BaseChannelFileTransferTypeSubclass>(
                 new BaseChannelFileTransferTypeSubclass(contentType,
@@ -257,8 +254,7 @@ public:
                                                         contentHashType,
                                                         contentHash,
                                                         description,
-                                                        date,
-                                                        availableSocketTypes));
+                                                        date));
     }
 
     virtual ~BaseChannelFileTransferType();
@@ -272,14 +268,12 @@ public:
     QString contentHash() const;
     QString description() const;
     QDateTime date() const;
-    Tp::SupportedSocketMap availableSocketTypes() const;
+    virtual Tp::SupportedSocketMap availableSocketTypes() const;
 
     uint state() const;
     void setState(uint state, uint reason);
 
     qulonglong transferredBytes() const;
-    void setTransferredBytes(qulonglong count);
-
     qulonglong initialOffset() const;
     void setInitialOffset(qulonglong initialOffset);
 
@@ -289,17 +283,10 @@ public:
     QString fileCollection() const;
     void setFileCollection(const QString &fileCollection);
 
-    typedef Callback5<QDBusVariant, uint, uint, const QDBusVariant &, qulonglong, DBusError*> AcceptFileCallback;
-    void setAcceptFileCallback(const AcceptFileCallback &cb);
-    QDBusVariant acceptFile(uint addressType, uint accessControl, const QDBusVariant &accessControlParam, qulonglong offset, DBusError *error);
+    typedef Callback2<QIODevice*, qulonglong, DBusError*> GetIODeviceCallback;
+    void setGetIODeviceCallback(const GetIODeviceCallback &cb);
 
-    typedef Callback4<QDBusVariant, uint, uint, const QDBusVariant &, DBusError*> ProvideFileCallback;
-    void setProvideFileCallback(const ProvideFileCallback &cb);
-    QDBusVariant provideFile(uint addressType, uint accessControl, const QDBusVariant &accessControlParam, DBusError *error);
-
-    void fileTransferStateChanged(uint state, uint reason);
-    void initialOffsetDefined(qulonglong initialOffset);
-    void uriDefined(const QString &uri);
+    void remoteAcceptFile(qulonglong offset);
 
 protected:
     BaseChannelFileTransferType(const QString &contentType,
@@ -308,10 +295,22 @@ protected:
                                 uint contentHashType,
                                 const QString &contentHash,
                                 const QString &description,
-                                const QDateTime &date,
-                                const Tp::SupportedSocketMap &availableSocketTypes);
+                                const QDateTime &date);
+
+    virtual bool createSocket(uint addressType, uint accessControl, const QDBusVariant &accessControlParam, DBusError *error);
+    virtual QDBusVariant socketAddress() const;
+
+    void setTransferredBytes(qulonglong count);
+    void setClientSocket(QIODevice *socket);
+
+private Q_SLOTS:
+    TP_QT_NO_EXPORT void onSocketConnection();
+    TP_QT_NO_EXPORT void writeAllAvailableBytes();
+    TP_QT_NO_EXPORT void onBytesWritten(qint64 count);
 
 private:
+    TP_QT_NO_EXPORT bool getIODevice(Tp::DBusError *error = 0);
+
     void createAdaptor();
 
     class Adaptee;
