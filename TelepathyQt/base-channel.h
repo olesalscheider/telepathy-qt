@@ -649,6 +649,9 @@ public:
 
     Tp::UIntList members() const;
 
+    Tp::HandleIdentifierMap memberIdentifiers() const;
+    void setMemberIdentifiers(const Tp::HandleIdentifierMap &memberIdentifiers, uint actor, Tp::ChannelGroupChangeReason reason = Tp::ChannelGroupChangeReasonNone, const QString &message = QString());
+
     typedef Callback3<void, const Tp::UIntList&, const QString&, DBusError*> RemoveMembersCallback;
     void setRemoveMembersCallback(const RemoveMembersCallback &cb);
 

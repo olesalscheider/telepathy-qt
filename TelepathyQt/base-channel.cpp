@@ -2566,6 +2566,41 @@ UIntList BaseChannelGroupInterface::members() const
     return mPriv->memberIdentifiers.keys();
 }
 
+HandleIdentifierMap BaseChannelGroupInterface::memberIdentifiers() const
+{
+    return mPriv->memberIdentifiers;
+}
+
+void BaseChannelGroupInterface::setMemberIdentifiers(const HandleIdentifierMap &memberIdentifiers, uint actor, ChannelGroupChangeReason reason, const QString &message)
+{
+    Tp::UIntList currentMembers = members();
+    Tp::UIntList newMembers = memberIdentifiers.keys();
+
+    Tp::UIntList removed;
+    foreach (uint handle, currentMembers) {
+        if (!newMembers.contains(handle)) {
+            removed << handle;
+        }
+    }
+
+    Tp::UIntList added;
+    foreach (uint handle, newMembers) {
+        if (!currentMembers.contains(handle)) {
+            added << handle;
+        }
+    }
+
+    mPriv->memberIdentifiers = memberIdentifiers;
+
+    QMetaObject::invokeMethod(mPriv->adaptee, "membersChanged",
+                              Q_ARG(QString, message),
+                              Q_ARG(Tp::UIntList, added),
+                              Q_ARG(Tp::UIntList, removed),
+                              Q_ARG(Tp::UIntList, /* localPending */ Tp::UIntList()),
+                              Q_ARG(Tp::UIntList, /* remotePending */ Tp::UIntList()),
+                              Q_ARG(uint, actor), Q_ARG(uint, reason)); //Can simply use emit in Qt5
+}
+
 void BaseChannelGroupInterface::createAdaptor()
 {
     (void) new Service::ChannelInterfaceGroupAdaptor(dbusObject()->dbusConnection(),
