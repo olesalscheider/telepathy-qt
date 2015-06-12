@@ -2602,7 +2602,7 @@ void BaseChannelGroupInterface::removeMembers(const Tp::UIntList& handles)
 {
     Tp::UIntList removed;
     foreach(uint handle, handles) {
-        if (mPriv->members.contains(handle))
+        if (!mPriv->members.contains(handle))
             continue;
 
         mPriv->memberIdentifiers.remove(handle);
