@@ -647,6 +647,8 @@ public:
 
     QVariantMap immutableProperties() const;
 
+    Tp::UIntList members() const;
+
     typedef Callback3<void, const Tp::UIntList&, const QString&, DBusError*> RemoveMembersCallback;
     void setRemoveMembersCallback(const RemoveMembersCallback &cb);
 

@@ -2385,7 +2385,6 @@ struct TP_QT_NO_EXPORT BaseChannelGroupInterface::Private {
     ChannelGroupFlags flags;
     Tp::HandleOwnerMap handleOwners;
     Tp::LocalPendingInfoList localPendingMembers;
-    Tp::UIntList members;
     Tp::UIntList remotePendingMembers;
     uint selfHandle;
     Tp::HandleIdentifierMap memberIdentifiers;
@@ -2417,7 +2416,7 @@ Tp::LocalPendingInfoList BaseChannelGroupInterface::Adaptee::localPendingMembers
 
 Tp::UIntList BaseChannelGroupInterface::Adaptee::members() const
 {
-    return mInterface->mPriv->members;
+    return mInterface->members();
 }
 
 Tp::UIntList BaseChannelGroupInterface::Adaptee::remotePendingMembers() const
@@ -2481,7 +2480,7 @@ void BaseChannelGroupInterface::Adaptee::removeMembersWithReason(const Tp::UIntL
 
 void BaseChannelGroupInterface::Adaptee::getAllMembers(const Tp::Service::ChannelInterfaceGroupAdaptor::GetAllMembersContextPtr &context)
 {
-    context->setFinished(mInterface->mPriv->members, mInterface->mPriv->getLocalPendingMembers(), mInterface->mPriv->remotePendingMembers);
+    context->setFinished(mInterface->members(), mInterface->mPriv->getLocalPendingMembers(), mInterface->mPriv->remotePendingMembers);
 }
 
 void BaseChannelGroupInterface::Adaptee::getGroupFlags(const Tp::Service::ChannelInterfaceGroupAdaptor::GetGroupFlagsContextPtr &context)
@@ -2509,7 +2508,7 @@ void BaseChannelGroupInterface::Adaptee::getLocalPendingMembersWithInfo(const Tp
 
 void BaseChannelGroupInterface::Adaptee::getMembers(const Tp::Service::ChannelInterfaceGroupAdaptor::GetMembersContextPtr &context)
 {
-    context->setFinished(mInterface->mPriv->members);
+    context->setFinished(mInterface->members());
 }
 
 void BaseChannelGroupInterface::Adaptee::getRemotePendingMembers(const Tp::Service::ChannelInterfaceGroupAdaptor::GetRemotePendingMembersContextPtr &context)
@@ -2562,6 +2561,11 @@ QVariantMap BaseChannelGroupInterface::immutableProperties() const
     return map;
 }
 
+UIntList BaseChannelGroupInterface::members() const
+{
+    return mPriv->memberIdentifiers.keys();
+}
+
 void BaseChannelGroupInterface::createAdaptor()
 {
     (void) new Service::ChannelInterfaceGroupAdaptor(dbusObject()->dbusConnection(),
@@ -2587,11 +2591,10 @@ void BaseChannelGroupInterface::addMembers(const Tp::UIntList& handles, const QS
     Tp::UIntList added;
     for (int i = 0; i < handles.size(); ++i) {
         uint handle = handles[i];
-        if (mPriv->members.contains(handle))
+        if (mPriv->memberIdentifiers.contains(handle))
             continue;
 
         mPriv->memberIdentifiers[handle] = identifiers[i];
-        mPriv->members.append(handle);
         added.append(handle);
     }
     if (!added.isEmpty())
@@ -2602,11 +2605,10 @@ void BaseChannelGroupInterface::removeMembers(const Tp::UIntList& handles)
 {
     Tp::UIntList removed;
     foreach(uint handle, handles) {
-        if (!mPriv->members.contains(handle))
+        if (!mPriv->memberIdentifiers.contains(handle))
             continue;
 
         mPriv->memberIdentifiers.remove(handle);
-        mPriv->members.removeAll(handle);
         removed.append(handle);
     }
     if (!removed.isEmpty())
