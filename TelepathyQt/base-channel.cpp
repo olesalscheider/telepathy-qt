@@ -788,6 +788,7 @@ struct TP_QT_NO_EXPORT BaseChannelFileTransferType::Private {
           date(date),
           transferredBytes(0),
           initialOffset(0),
+          device(0),
           serverSocket(0),
           clientSocket(0),
           transferType(Unknown),
@@ -944,7 +945,7 @@ void BaseChannelFileTransferType::Adaptee::provideFile(uint addressType, uint ac
 
     QDBusVariant address = mInterface->socketAddress();
 
-    mInterface->setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone);
+    mInterface->setState(Tp::FileTransferStatePending, Tp::FileTransferStateChangeReasonNone);
 
     context->setFinished(address);
 }
@@ -1115,31 +1116,22 @@ void BaseChannelFileTransferType::setClientSocket(QIODevice *socket)
         return;
     }
 
-    QIODevice *inputDevice = 0;
-    QIODevice *outputDevice = 0;
-
     switch (mPriv->transferType) {
     case BaseChannelFileTransferType::Private::Outgoing:
-        inputDevice = mPriv->clientSocket;
-        outputDevice = mPriv->device;
+        connect(mPriv->clientSocket, SIGNAL(readyRead()), this, SLOT(writeAllAvailableBytes()));
         break;
     case BaseChannelFileTransferType::Private::Incoming:
-        inputDevice = mPriv->device;
-        outputDevice = mPriv->clientSocket;
+        connect(mPriv->clientSocket, SIGNAL(bytesWritten(qint64)), this, SLOT(onBytesWritten(qint64)));
+        break;
     default:
         // Should not be ever possible
         Q_ASSERT(0);
         break;
     }
 
-    connect(inputDevice, SIGNAL(readyRead()), this, SLOT(writeAllAvailableBytes()));
-    connect(outputDevice, SIGNAL(bytesWritten(qint64)), this, SLOT(onBytesWritten(qint64)));
-
     setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone);
 
-    if (inputDevice->bytesAvailable()) {
-        writeAllAvailableBytes();
-    }
+    writeAllAvailableBytes();
 }
 
 void BaseChannelFileTransferType::onSocketConnection()
@@ -1151,12 +1143,17 @@ void BaseChannelFileTransferType::writeAllAvailableBytes()
 {
     // TODO: Buffer for 16 * 1024 bytes? (Like in outgoing-file-transfer-channel.cpp:41)
 
+    if (!mPriv->clientSocket || !mPriv->device) {
+        return;
+    }
+
     switch (mPriv->transferType) {
     case BaseChannelFileTransferType::Private::Outgoing:
         mPriv->device->write(mPriv->clientSocket->readAll());
         break;
     case BaseChannelFileTransferType::Private::Incoming:
         mPriv->clientSocket->write(mPriv->device->readAll());
+        break;
     default:
         // Should not be ever possible
         Q_ASSERT(0);
@@ -1193,6 +1190,21 @@ bool BaseChannelFileTransferType::getIODevice(Tp::DBusError *error)
     }
 
     mPriv->device = device;
+
+    switch (mPriv->transferType) {
+    case BaseChannelFileTransferType::Private::Outgoing:
+        connect(mPriv->device, SIGNAL(bytesWritten(qint64)), this, SLOT(onBytesWritten(qint64)));
+        break;
+    case BaseChannelFileTransferType::Private::Incoming:
+        connect(mPriv->device, SIGNAL(readyRead()), this, SLOT(writeAllAvailableBytes()));
+        break;
+    default:
+        // Should not be ever possible
+        Q_ASSERT(0);
+        break;
+    }
+
+    writeAllAvailableBytes();
 
     return true;
 }
@@ -1247,8 +1259,8 @@ void BaseChannelFileTransferType::setState(uint state, uint reason)
     }
 
     mPriv->state = state;
-    emit stateChanged(state, reason);
     QMetaObject::invokeMethod(mPriv->adaptee, "fileTransferStateChanged", Q_ARG(uint, state), Q_ARG(uint, reason)); //Can simply use emit in Qt5
+    emit stateChanged(state, reason);
 }
 
 QString BaseChannelFileTransferType::contentType() const
@@ -1353,6 +1365,8 @@ void BaseChannelFileTransferType::setInitialOffset(qulonglong initialOffset)
 {
     mPriv->initialOffset = initialOffset;
     QMetaObject::invokeMethod(mPriv->adaptee, "initialOffsetDefined", Q_ARG(qulonglong, initialOffset)); //Can simply use emit in Qt5
+
+    setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone); //TODO: Necessary?
 
     if (mPriv->transferType == BaseChannelFileTransferType::Private::Incoming) {
         getIODevice();
