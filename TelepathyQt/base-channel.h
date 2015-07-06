@@ -288,6 +288,9 @@ public:
 
     void remoteAcceptFile(qulonglong offset);
 
+Q_SIGNALS:
+    void stateChanged(uint state, uint reason);
+
 protected:
     BaseChannelFileTransferType(const QString &contentType,
                                 const QString &filename,

@@ -1242,7 +1242,12 @@ uint BaseChannelFileTransferType::state() const
 
 void BaseChannelFileTransferType::setState(uint state, uint reason)
 {
+    if (mPriv->state == state) {
+        return;
+    }
+
     mPriv->state = state;
+    emit stateChanged(state, reason);
     QMetaObject::invokeMethod(mPriv->adaptee, "fileTransferStateChanged", Q_ARG(uint, state), Q_ARG(uint, reason)); //Can simply use emit in Qt5
 }
 
