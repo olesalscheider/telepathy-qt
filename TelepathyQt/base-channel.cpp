@@ -1982,9 +1982,11 @@ void BaseChannelGroupInterface::setMemberIdentifiers(const HandleIdentifierMap &
     Tp::UIntList newMembers = memberIdentifiers.keys();
 
     Tp::UIntList removed;
+    HandleIdentifierMap contactIds;
     foreach (uint handle, currentMembers) {
         if (!newMembers.contains(handle)) {
             removed << handle;
+            contactIds[handle] = mPriv->memberIdentifiers[handle];
         }
     }
 
@@ -1992,6 +1994,7 @@ void BaseChannelGroupInterface::setMemberIdentifiers(const HandleIdentifierMap &
     foreach (uint handle, newMembers) {
         if (!currentMembers.contains(handle)) {
             added << handle;
+            contactIds[handle] = memberIdentifiers[handle];
         }
     }
 
@@ -2004,6 +2007,22 @@ void BaseChannelGroupInterface::setMemberIdentifiers(const HandleIdentifierMap &
                               Q_ARG(Tp::UIntList, /* localPending */ Tp::UIntList()),
                               Q_ARG(Tp::UIntList, /* remotePending */ Tp::UIntList()),
                               Q_ARG(uint, actor), Q_ARG(uint, reason)); //Can simply use emit in Qt5
+
+    if (mPriv->flags & Tp::ChannelGroupFlagMembersChangedDetailed) {
+        QVariantMap details;
+        details.insert(QLatin1String("actor"), QVariant::fromValue(actor));
+        details.insert(QLatin1String("change-reason"), QVariant::fromValue((uint)reason));
+        details.insert(QLatin1String("contact-ids"), QVariant::fromValue(contactIds));
+        details.insert(QLatin1String("message"), QVariant::fromValue(message));
+        details.insert(QLatin1String("error"), QVariant::fromValue(QString()));
+        details.insert(QLatin1String("debug-message"), QVariant::fromValue(QString()));
+        QMetaObject::invokeMethod(mPriv->adaptee, "membersChangedDetailed",
+                                  Q_ARG(Tp::UIntList, added),
+                                  Q_ARG(Tp::UIntList, removed),
+                                  Q_ARG(Tp::UIntList, Tp::UIntList()),
+                                  Q_ARG(Tp::UIntList, Tp::UIntList()),
+                                  Q_ARG(QVariantMap, details));
+    }
 }
 
 void BaseChannelGroupInterface::createAdaptor()
