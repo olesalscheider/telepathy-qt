@@ -661,10 +661,6 @@ public:
     typedef Callback3<void, const Tp::UIntList&, const QString&, DBusError*> AddMembersCallback;
     void setAddMembersCallback(const AddMembersCallback &cb);
 
-    /* Adds a contact to this group. No-op if already in this group */
-    void addMembers(const Tp::UIntList &handles, const QStringList &identifiers);
-    void removeMembers(const Tp::UIntList &handles);
-
 private Q_SLOTS:
 private:
     BaseChannelGroupInterface(ChannelGroupFlags initialFlags, uint selfHandle);
