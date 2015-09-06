@@ -945,8 +945,6 @@ void BaseChannelFileTransferType::Adaptee::provideFile(uint addressType, uint ac
 
     QDBusVariant address = mInterface->socketAddress();
 
-    mInterface->setState(Tp::FileTransferStatePending, Tp::FileTransferStateChangeReasonNone);
-
     context->setFinished(address);
 }
 
@@ -1129,7 +1127,9 @@ void BaseChannelFileTransferType::setClientSocket(QIODevice *socket)
         break;
     }
 
-    setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone);
+    if (mPriv->transferType == BaseChannelFileTransferType::Private::Outgoing) {
+        setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone);
+    }
 
     writeAllAvailableBytes();
 }
@@ -1366,9 +1366,9 @@ void BaseChannelFileTransferType::setInitialOffset(qulonglong initialOffset)
     mPriv->initialOffset = initialOffset;
     QMetaObject::invokeMethod(mPriv->adaptee, "initialOffsetDefined", Q_ARG(qulonglong, initialOffset)); //Can simply use emit in Qt5
 
-    setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone); //TODO: Necessary?
-
     if (mPriv->transferType == BaseChannelFileTransferType::Private::Incoming) {
+        setState(Tp::FileTransferStateOpen, Tp::FileTransferStateChangeReasonNone);
+
         getIODevice();
     }
 }
